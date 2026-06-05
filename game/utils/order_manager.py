@@ -3,11 +3,12 @@ import random
 from game.utils.constants import Constants
 
 class Order:
-    def __init__(self, recipe_name, ingredients):
+    def __init__(self, recipe_name, ingredients, customer=None):
         self.recipe_name = recipe_name
         self.ingredients = ingredients # List of (name, state)
         self.time_left = 60.0 # 60 seconds to complete
         self.max_time = 60.0
+        self.customer = customer
 
 class OrderManager:
     def __init__(self, base):
@@ -31,7 +32,7 @@ class OrderManager:
     def update(self, dt):
         self.spawn_timer += dt
         if self.spawn_timer > 15.0: # New order every 15 seconds
-            self.spawn_order()
+            self.spawn_customer_and_order()
             self.spawn_timer = 0
 
         for order in self.active_orders:
@@ -39,15 +40,25 @@ class OrderManager:
             if order.time_left <= 0:
                 self.fail_order(order)
 
-    def spawn_order(self):
-        if len(self.active_orders) < 5:
+    def spawn_customer_and_order(self):
+        # Find a free table
+        free_tables = [s for s in self.base.stations if s.station_type == "dining_table" and s.occupied_by is None]
+        if free_tables and len(self.active_orders) < 5:
+            from game.entities.customer import Customer
+            table = random.choice(free_tables)
+            customer = Customer(self.base, table)
+            self.base.customers.append(customer)
+
             name = random.choice(list(self.recipes.keys()))
-            order = Order(name, self.recipes[name])
+            order = Order(name, self.recipes[name], customer)
+            customer.order = order
             self.active_orders.append(order)
-            print(f"Nouvelle commande : {name}")
+            print(f"Nouveau client à table ! Commande : {name}")
 
     def fail_order(self, order):
         print(f"Commande échouée : {order.recipe_name}")
+        if order.customer:
+            order.customer.leave()
         self.active_orders.remove(order)
         self.base.score = max(0, self.base.score - 50)
         if self.base.sound_fail: self.base.sound_fail.play()
@@ -57,6 +68,8 @@ class OrderManager:
         for order in self.active_orders:
             if self.match_recipe(order, items):
                 print(f"Commande réussie : {order.recipe_name}")
+                if order.customer:
+                    order.customer.leave()
                 self.base.score += 100 + int(order.time_left)
                 self.active_orders.remove(order)
                 if self.base.sound_success: self.base.sound_success.play()

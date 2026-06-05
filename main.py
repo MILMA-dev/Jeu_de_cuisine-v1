@@ -1,7 +1,8 @@
 
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectButton, DirectFrame, OnscreenText
-from panda3d.core import TextNode
+from panda3d.core import TextNode, WindowProperties, loadPrcFileData, AmbientLight, DirectionalLight, Vec4
+import simplepbr
 import sys
 import json
 import os
@@ -11,14 +12,20 @@ from game.utils.input_manager import InputManager
 from game.entities.player import Player
 from game.entities.stations import (
     BaseStation, IngredientCrate, CuttingBoard, Stove, TrashBin, ExtinguisherStation,
-    Counter, PlateCrate
+    Counter, PlateCrate, DiningTable
 )
 from game.utils.order_manager import OrderManager
 
 class CookingGame(ShowBase):
     def __init__(self):
+        loadPrcFileData("", "window-title Cooking Adventure Clone")
+        loadPrcFileData("", "win-size 1280 720")
+
         ShowBase.__init__(self)
         self.disableMouse() # We want direct control over the camera
+
+        # Initialize PBR
+        self.pipeline = simplepbr.init()
 
         self.state = Constants.STATE_MENU
         self.key_map = self.load_keybindings()
@@ -77,12 +84,18 @@ class CookingGame(ShowBase):
 
         self.key_buttons = {}
         y_pos = 0.4
-        for action in self.key_map:
+        x_pos = -0.3
+        count = 0
+        for action in sorted(self.key_map.keys()):
             text = f"{action}: {self.key_map[action]}"
-            btn = DirectButton(text=text, scale=0.06, pos=(0, y_pos, 0),
+            btn = DirectButton(text=text, scale=0.05, pos=(x_pos, y_pos, 0),
                                parent=self.options_frame, command=self.start_rebind, extraArgs=[action])
             self.key_buttons[action] = btn
             y_pos -= 0.12
+            count += 1
+            if count == 5:
+                x_pos = 0.3
+                y_pos = 0.4
 
         DirectButton(text="Retour", scale=0.08, pos=(0, -0.6, 0),
                      parent=self.options_frame, command=lambda: self.enter_state(Constants.STATE_MENU))
@@ -123,18 +136,25 @@ class CookingGame(ShowBase):
 
     def cleanup_game(self):
         if hasattr(self, 'player') and self.player:
-            self.player.model.removeNode()
+            if self.player.model:
+                self.player.model.removeNode()
             if self.player.held_item:
                 self.player.held_item.destroy()
             self.player = None
 
+        if hasattr(self, 'customers'):
+            for customer in self.customers:
+                if customer.model:
+                    customer.model.removeNode()
+            self.customers = []
+
         if hasattr(self, 'stations'):
             for station in self.stations:
                 if station.content:
+                    if hasattr(station.content, 'contents'):
+                        for sub_item in station.content.contents:
+                            sub_item.destroy()
                     station.content.destroy()
-                if hasattr(station, 'plate_contents'):
-                    for item in station.plate_contents:
-                        item.destroy()
                 station.model.removeNode()
             self.stations = []
 
@@ -174,8 +194,22 @@ class CookingGame(ShowBase):
 
     def setup_game_world(self):
         print("Starting game world...")
+
+        # Lights
+        alight = AmbientLight('alight')
+        alight.setColor(Vec4(0.5, 0.5, 0.5, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
+
+        dlight = DirectionalLight('dlight')
+        dlight.setColor(Vec4(0.8, 0.8, 0.8, 1))
+        dlnp = self.render.attachNewNode(dlight)
+        dlnp.setHpr(45, -45, 0)
+        self.render.setLight(dlnp)
+
         self.player = Player(self, self.input_manager)
         self.order_manager = OrderManager(self)
+        self.customers = []
         self.score = 0
         self.level_time = 180.0 # 3 minutes
 
@@ -200,7 +234,12 @@ class CookingGame(ShowBase):
         self.stations.append(Counter(self, (0, -4, 0), self.order_manager))
         self.stations.append(PlateCrate(self, (-2, -4, 0)))
 
-        self.camera.setPos(0, -12, 12)
+        # Dining Tables
+        self.stations.append(DiningTable(self, (-5, -8, 0)))
+        self.stations.append(DiningTable(self, (0, -8, 0)))
+        self.stations.append(DiningTable(self, (5, -8, 0)))
+
+        self.camera.setPos(0, -15, 18)
         self.camera.lookAt(0, 0, 0)
 
         self.taskMgr.add(self.update, "update_task")
@@ -218,13 +257,16 @@ class CookingGame(ShowBase):
             self.player.update(dt)
             self.order_manager.update(dt)
 
+            for customer in self.customers[:]: # Use slice to avoid issues when customer removes itself
+                customer.update(dt)
+
             for station in self.stations:
                 station.update(dt)
                 if hasattr(station, 'on_fire') and station.on_fire:
                     any_fire = True
 
             if any_fire:
-                if self.sound_fire and self.sound_fire.status() != self.sound_fire.PLAYING:
+                if self.sound_fire and self.sound_fire.status() != 2: # 2 is PLAYING in Panda3D AudioSound
                     self.sound_fire.play()
             else:
                 if self.sound_fire: self.sound_fire.stop()

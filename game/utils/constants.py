@@ -7,11 +7,11 @@ class Constants:
     STATE_PAUSED = "paused"
     STATE_GAMEOVER = "gameover"
 
-    # Default Keybindings
+    # Default Keybindings (AZERTY)
     DEFAULT_KEYS = {
-        "up": "w",
+        "up": "z",
         "down": "s",
-        "left": "a",
+        "left": "q",
         "right": "d",
         "interact": "e",
         "dash": "shift",

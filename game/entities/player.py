@@ -6,12 +6,30 @@ class Player:
         self.base = base
         self.input_manager = input_manager
 
-        # Player visual (a simple box for now)
-        self.model = self.base.loader.loadModel("models/box")
-        self.model.reparentTo(self.base.render)
-        self.model.setScale(0.5, 0.5, 1.0)
-        self.model.setPos(0, 0, 0.5)
-        self.model.setColor(0, 0.7, 1, 1)
+        # Player visual (Composition)
+        self.model = self.base.render.attachNewNode("player_root")
+
+        # Body
+        self.body = self.base.loader.loadModel("models/box")
+        self.body.reparentTo(self.model)
+        self.body.setScale(0.6, 0.4, 0.8)
+        self.body.setZ(0.4)
+        self.body.setColor(0.2, 0.4, 0.8, 1)
+
+        # Head
+        self.head = self.base.loader.loadModel("models/smiley")
+        self.head.reparentTo(self.model)
+        self.head.setZ(1.1)
+        self.head.setScale(0.25)
+
+        # Chef hat (simple white box)
+        self.hat = self.base.loader.loadModel("models/box")
+        self.hat.reparentTo(self.model)
+        self.hat.setZ(1.4)
+        self.hat.setScale(0.2, 0.2, 0.3)
+        self.hat.setColor(1, 1, 1, 1)
+
+        self.model.setPos(0, 0, 0)
 
         self.speed = 10.0
         self.held_item = None

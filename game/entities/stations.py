@@ -13,8 +13,15 @@ class BaseStation:
         self.model = self.base.loader.loadModel("models/box")
         self.model.reparentTo(self.base.render)
         self.model.setPos(pos)
-        self.model.setScale(1.0, 1.0, 0.8)
-        self.model.setColor(0.5, 0.5, 0.5, 1)
+        self.model.setScale(1.2, 1.2, 0.8)
+        self.model.setColor(0.4, 0.3, 0.2, 1) # Wood color
+
+        # Add a "top" for the station
+        self.top = self.base.loader.loadModel("models/box")
+        self.top.reparentTo(self.model)
+        self.top.setPos(0, 0, 0.5)
+        self.top.setScale(1.05, 1.05, 0.1)
+        self.top.setColor(0.6, 0.6, 0.6, 1)
 
         self.content = None
 
@@ -53,7 +60,15 @@ class IngredientCrate(BaseStation):
 class CuttingBoard(BaseStation):
     def __init__(self, base, pos):
         super().__init__(base, pos, Constants.STATION_CUTTING)
-        self.model.setColor(0.8, 0.8, 0.5, 1)
+        self.top.setColor(0.9, 0.8, 0.6, 1)
+
+        # Cutting board visual
+        self.board = self.base.loader.loadModel("models/box")
+        self.board.reparentTo(self.model)
+        self.board.setPos(0, 0, 0.6)
+        self.board.setScale(0.8, 0.6, 0.05)
+        self.board.setColor(0.9, 0.9, 0.9, 1)
+
         self.progress = 0
         self.is_cutting = False
         self.progress_bar = ProgressBar(self.model)
@@ -85,7 +100,15 @@ class CuttingBoard(BaseStation):
 class Stove(BaseStation):
     def __init__(self, base, pos):
         super().__init__(base, pos, Constants.STATION_STOVE)
-        self.model.setColor(1, 0.2, 0.2, 1)
+        self.top.setColor(0.2, 0.2, 0.2, 1)
+
+        # Burner visual
+        self.burner = self.base.loader.loadModel("models/smiley")
+        self.burner.reparentTo(self.model)
+        self.burner.setPos(0, 0, 0.55)
+        self.burner.setScale(0.4, 0.4, 0.05)
+        self.burner.setColor(0.1, 0.1, 0.1, 1)
+
         self.progress = 0
         self.burn_progress = 0
         self.on_fire = False
@@ -152,31 +175,31 @@ class Counter(BaseStation):
         super().__init__(base, pos, Constants.STATION_COUNTER)
         self.order_manager = order_manager
         self.model.setColor(0.7, 0.7, 0.7, 1)
-        self.plate_contents = []
 
     def interact(self, player):
         if player.held_item:
             if player.held_item.name == "Plate":
-                # Swap plate or something?
                 super().interact(player)
             else:
                 # If there's a plate on the counter, add item to it
                 if self.content and self.content.name == "Plate":
-                    self.plate_contents.append(player.held_item)
-                    player.held_item.model.reparentTo(self.content.model)
-                    player.held_item.model.setPos(0, 0, 0.2 + len(self.plate_contents)*0.2)
+                    plate = self.content
+                    plate.contents.append(player.held_item)
+                    player.held_item.model.reparentTo(plate.model)
+                    player.held_item.model.setPos(0, 0, 0.2 + len(plate.contents)*0.2)
                     player.held_item = None
+                    return True
                 else:
                     super().interact(player)
         elif not player.held_item and self.content:
             if self.content.name == "Plate":
+                plate = self.content
                 # Try to serve
-                if self.order_manager.complete_order(self.plate_contents):
+                if self.order_manager.complete_order(plate.contents):
                     # Success, clear plate
-                    for item in self.plate_contents:
+                    for item in plate.contents:
                         item.destroy()
-                    self.plate_contents = []
-                    # Keep the plate or serve the plate? Let's say we serve the plate and it reappears.
+                    plate.contents = []
                     return True
                 else:
                     # Just pick up the plate
@@ -188,7 +211,7 @@ class Counter(BaseStation):
 class PlateCrate(BaseStation):
     def __init__(self, base, pos):
         super().__init__(base, pos, Constants.STATION_CRATE)
-        self.model.setColor(1, 1, 1, 1)
+        self.model.setColor(0.8, 0.8, 0.8, 1)
 
     def interact(self, player):
         if not player.held_item:
@@ -197,6 +220,29 @@ class PlateCrate(BaseStation):
             player.pick_up(item)
             return True
         return False
+
+class DiningTable(BaseStation):
+    def __init__(self, base, pos):
+        super().__init__(base, pos, "dining_table")
+        self.model.setScale(1.5, 1.5, 0.1)
+        self.model.setZ(0.7) # Table top height
+        self.top.hide() # We use the model as top
+        self.model.setColor(0.5, 0.3, 0.2, 1)
+
+        # Legs
+        for lp in [(-0.6, -0.6), (0.6, -0.6), (-0.6, 0.6), (0.6, 0.6)]:
+            leg = self.base.loader.loadModel("models/box")
+            leg.reparentTo(self.model)
+            leg.setPos(lp[0], lp[1], -4)
+            leg.setScale(0.1, 0.1, 8)
+            leg.setColor(0.3, 0.2, 0.1, 1)
+
+        self.occupied_by = None
+
+    def interact(self, player):
+        # Dining tables are mostly for customers, but player might drop something?
+        # Let's use BaseStation interaction for now
+        return super().interact(player)
 
 class ExtinguisherStation(BaseStation):
     def __init__(self, base, pos):

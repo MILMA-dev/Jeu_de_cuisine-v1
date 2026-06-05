@@ -1,4 +1,5 @@
 
+
 from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import DirectButton, DirectFrame, OnscreenText
 from panda3d.core import TextNode, WindowProperties, loadPrcFileData, AmbientLight, DirectionalLight, Vec4
@@ -14,36 +15,34 @@ from game.entities.stations import (
     BaseStation, IngredientCrate, CuttingBoard, Stove, TrashBin, ExtinguisherStation,
     Counter, PlateCrate, DiningTable
 )
+from game.entities.environment import Environment
 from game.utils.order_manager import OrderManager
 
 class CookingGame(ShowBase):
     def __init__(self):
         loadPrcFileData("", "window-title Cooking Adventure Clone")
         loadPrcFileData("", "win-size 1280 720")
+        loadPrcFileData("", "textures-power-2 none")
 
         ShowBase.__init__(self)
-        self.disableMouse() # We want direct control over the camera
+        self.disableMouse()
 
-        # Initialize PBR
         self.pipeline = simplepbr.init()
 
         self.state = Constants.STATE_MENU
         self.key_map = self.load_keybindings()
         self.input_manager = InputManager(self, self.key_map)
 
-        # UI Containers
-        self.menu_frame = None
-        self.options_frame = None
-        self.game_ui_frame = None
-        self.gameover_frame = None
-
         self.setup_ui()
         self.enter_state(Constants.STATE_MENU)
 
     def load_keybindings(self):
         if os.path.exists("keybindings.json"):
-            with open("keybindings.json", "r") as f:
-                return json.load(f)
+            try:
+                with open("keybindings.json", "r") as f:
+                    return json.load(f)
+            except:
+                return Constants.DEFAULT_KEYS.copy()
         return Constants.DEFAULT_KEYS.copy()
 
     def save_keybindings(self):
@@ -51,18 +50,52 @@ class CookingGame(ShowBase):
             json.dump(self.key_map, f)
 
     def setup_ui(self):
+        # Background color for menus
+        self.setBackgroundColor(0.2, 0.4, 0.6)
+
         # Main Menu
-        self.menu_frame = DirectFrame(frameColor=(0, 0, 0, 0.5), frameSize=(-0.5, 0.5, -0.5, 0.5))
-        self.menu_title = OnscreenText(text="Cooking Adventure Clone", pos=(0, 0.3), scale=0.1, parent=self.menu_frame, fg=(1,1,1,1))
+        self.menu_frame = DirectFrame(frameColor=(0, 0, 0, 0.6), frameSize=(-0.6, 0.6, -0.7, 0.7))
+        OnscreenText(text="COOKING ADVENTURE", pos=(0, 0.5), scale=0.15, parent=self.menu_frame, fg=(1, 0.8, 0.2, 1), font=self.loader.loadFont("models/cmss12"))
 
-        self.btn_play = DirectButton(text="Lancer une partie", scale=0.08, pos=(0, 0.1, 0),
-                                     parent=self.menu_frame, command=self.start_game)
-        self.btn_options = DirectButton(text="Options", scale=0.08, pos=(0, -0.1, 0),
-                                        parent=self.menu_frame, command=lambda: self.enter_state(Constants.STATE_OPTIONS))
-        self.btn_quit = DirectButton(text="Quitter", scale=0.08, pos=(0, -0.3, 0),
-                                     parent=self.menu_frame, command=sys.exit)
+        btn_style = {"scale": 0.08, "frameColor": (0.8, 0.4, 0.2, 1), "text_fg": (1,1,1,1), "relief": 1}
 
-        # Sounds
+        self.btn_play = DirectButton(text="COMMENCER", pos=(0, 0.2, 0), parent=self.menu_frame, command=self.start_game, **btn_style)
+        self.btn_options = DirectButton(text="OPTIONS", pos=(0, 0.0, 0), parent=self.menu_frame, command=lambda: self.enter_state(Constants.STATE_OPTIONS), **btn_style)
+        self.btn_quit = DirectButton(text="QUITTER", pos=(0, -0.2, 0), parent=self.menu_frame, command=sys.exit, **btn_style)
+
+        # Options Menu
+        self.options_frame = DirectFrame(frameColor=(0, 0, 0, 0.8), frameSize=(-0.9, 0.9, -0.9, 0.9))
+        OnscreenText(text="CONFIGURATION DES TOUCHES", pos=(0, 0.7), scale=0.1, parent=self.options_frame, fg=(1,1,1,1))
+
+        self.key_buttons = {}
+        actions = ["up", "down", "left", "right", "interact"]
+        labels = {"up": "Avancer (Z)", "down": "Reculer (S)", "left": "Gauche (Q)", "right": "Droite (D)", "interact": "Action (E)"}
+
+        y_pos = 0.4
+        for action in actions:
+            text = f"{labels[action]}: {self.key_map[action]}"
+            btn = DirectButton(text=text, scale=0.06, pos=(0, y_pos, 0),
+                               parent=self.options_frame, command=self.start_rebind, extraArgs=[action], frameSize=(-6, 6, -0.6, 1.2))
+            self.key_buttons[action] = btn
+            y_pos -= 0.18
+
+        DirectButton(text="RETOUR", scale=0.07, pos=(0, -0.6, 0),
+                     parent=self.options_frame, command=lambda: self.enter_state(Constants.STATE_MENU), **btn_style)
+        self.options_frame.hide()
+
+        # Game UI
+        self.game_ui_frame = DirectFrame(frameColor=(0, 0, 0, 0), frameSize=(-1, 1, -1, 1))
+        self.score_text = OnscreenText(text="Score: 0", pos=(-1.2, 0.9), scale=0.08, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ALeft)
+        self.timer_text = OnscreenText(text="Temps: 180", pos=(1.2, 0.9), scale=0.08, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ARight)
+        self.game_ui_frame.hide()
+
+        # Game Over UI
+        self.gameover_frame = DirectFrame(frameColor=(0, 0, 0, 0.9), frameSize=(-0.7, 0.7, -0.7, 0.7))
+        OnscreenText(text="PARTIE TERMINÉE", pos=(0, 0.4), scale=0.12, parent=self.gameover_frame, fg=(1, 0.2, 0.2, 1))
+        self.final_score_text = OnscreenText(text="Score Final: 0", pos=(0, 0.1), scale=0.08, parent=self.gameover_frame, fg=(1,1,1,1))
+        DirectButton(text="MENU PRINCIPAL", pos=(0, -0.3, 0), parent=self.gameover_frame, command=lambda: self.enter_state(Constants.STATE_MENU), **btn_style)
+        self.gameover_frame.hide()
+
         try:
             self.sound_interact = self.loader.loadSfx("assets/sounds/interact.wav")
             self.sound_success = self.loader.loadSfx("assets/sounds/success.wav")
@@ -70,106 +103,23 @@ class CookingGame(ShowBase):
             self.sound_fire = self.loader.loadSfx("assets/sounds/fire.wav")
             self.sound_fire.setLoop(True)
         except:
-            print("Warning: Could not load sounds.")
-            self.sound_interact = None
-            self.sound_success = None
-            self.sound_fail = None
-            self.sound_fire = None
-
-        self.menu_frame.hide()
-
-        # Options Menu
-        self.options_frame = DirectFrame(frameColor=(0, 0, 0, 0.7), frameSize=(-0.8, 0.8, -0.8, 0.8))
-        OnscreenText(text="Options - Configuration des touches", pos=(0, 0.6), scale=0.1, parent=self.options_frame, fg=(1,1,1,1))
-
-        self.key_buttons = {}
-        y_pos = 0.4
-        x_pos = -0.3
-        count = 0
-        for action in sorted(self.key_map.keys()):
-            text = f"{action}: {self.key_map[action]}"
-            btn = DirectButton(text=text, scale=0.05, pos=(x_pos, y_pos, 0),
-                               parent=self.options_frame, command=self.start_rebind, extraArgs=[action])
-            self.key_buttons[action] = btn
-            y_pos -= 0.12
-            count += 1
-            if count == 5:
-                x_pos = 0.3
-                y_pos = 0.4
-
-        DirectButton(text="Retour", scale=0.08, pos=(0, -0.6, 0),
-                     parent=self.options_frame, command=lambda: self.enter_state(Constants.STATE_MENU))
-        self.options_frame.hide()
-        self.rebinding_action = None
-
-        # Game UI
-        self.game_ui_frame = DirectFrame(frameColor=(0, 0, 0, 0), frameSize=(-1, 1, -1, 1))
-        self.score_text = OnscreenText(text="Score: 0", pos=(-1.1, 0.9), scale=0.07, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ALeft)
-        self.timer_text = OnscreenText(text="Temps: 180", pos=(1.1, 0.9), scale=0.07, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ARight)
-        self.orders_text = OnscreenText(text="", pos=(-1.1, 0.7), scale=0.05, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ALeft, mayChange=True)
-        self.game_ui_frame.hide()
-
-        # Game Over UI
-        self.gameover_frame = DirectFrame(frameColor=(0, 0, 0, 0.8), frameSize=(-0.7, 0.7, -0.7, 0.7))
-        self.gameover_title = OnscreenText(text="FIN DE PARTIE", pos=(0, 0.4), scale=0.12, parent=self.gameover_frame, fg=(1,0,0,1))
-        self.final_score_text = OnscreenText(text="Score Final: 0", pos=(0, 0.1), scale=0.08, parent=self.gameover_frame, fg=(1,1,1,1))
-        DirectButton(text="Menu Principal", scale=0.08, pos=(0, -0.3, 0),
-                     parent=self.gameover_frame, command=lambda: self.enter_state(Constants.STATE_MENU))
-        self.gameover_frame.hide()
+            self.sound_interact = self.sound_success = self.sound_fail = self.sound_fire = None
 
     def start_rebind(self, action):
         self.rebinding_action = action
-        self.key_buttons[action].setText(f"Appuyez sur une touche pour {action}...")
-        # In Panda3D, to catch any key, we can use 'time-any' or just a task that monitors button presses
-        self.button_thrower_node = self.buttonThrowers[0].node()
+        self.key_buttons[action].setText("Appuyez sur une touche...")
         self.accept("button-down", self.finish_rebind)
 
     def finish_rebind(self, key):
-        if self.rebinding_action:
-            # We don't want to bind 'escape' or 'mouse1' by accident usually, but let's be flexible
+        if hasattr(self, 'rebinding_action') and self.rebinding_action:
             self.key_map[self.rebinding_action] = key
-            self.key_buttons[self.rebinding_action].setText(f"{self.rebinding_action}: {key}")
+            self.key_buttons[self.rebinding_action].setText(f"{self.rebinding_action.upper()}: {key}")
             self.save_keybindings()
             self.input_manager.update_keymap(self.key_map)
             self.rebinding_action = None
             self.ignore("button-down")
 
-    def cleanup_game(self):
-        if hasattr(self, 'player') and self.player:
-            if self.player.model:
-                self.player.model.removeNode()
-            if self.player.held_item:
-                self.player.held_item.destroy()
-            self.player = None
-
-        if hasattr(self, 'customers'):
-            for customer in self.customers:
-                if customer.model:
-                    customer.model.removeNode()
-            self.customers = []
-
-        if hasattr(self, 'stations'):
-            for station in self.stations:
-                if station.content:
-                    if hasattr(station.content, 'contents'):
-                        for sub_item in station.content.contents:
-                            sub_item.destroy()
-                    station.content.destroy()
-                station.model.removeNode()
-            self.stations = []
-
-        if hasattr(self, 'order_manager'):
-            self.order_manager = None
-
-        if self.sound_fire:
-            self.sound_fire.stop()
-
-        self.taskMgr.remove("update_task")
-
     def enter_state(self, new_state):
-        if self.state == Constants.STATE_PLAYING and new_state != Constants.STATE_PLAYING:
-            pass # Keep it for gameover display? No, better cleanup and show results.
-
         self.menu_frame.hide()
         self.options_frame.hide()
         self.game_ui_frame.hide()
@@ -179,76 +129,90 @@ class CookingGame(ShowBase):
 
         if self.state == Constants.STATE_MENU:
             self.menu_frame.show()
+            self.setBackgroundColor(0.2, 0.4, 0.6)
         elif self.state == Constants.STATE_OPTIONS:
             self.options_frame.show()
         elif self.state == Constants.STATE_PLAYING:
-            self.cleanup_game() # Clear any previous game
+            self.cleanup_game()
             self.game_ui_frame.show()
             self.setup_game_world()
         elif self.state == Constants.STATE_GAMEOVER:
             self.final_score_text.setText(f"Score Final: {self.score}")
             self.gameover_frame.show()
 
+    def cleanup_game(self):
+        if hasattr(self, 'player') and self.player:
+            self.player.model.removeNode()
+            if self.player.held_item: self.player.held_item.destroy()
+            self.player = None
+
+        if hasattr(self, 'customers'):
+            for c in self.customers: c.model.removeNode()
+            self.customers = []
+
+        if hasattr(self, 'stations'):
+            for s in self.stations:
+                if s.content: s.content.destroy()
+                s.model.removeNode()
+            self.stations = []
+
+        if hasattr(self, 'environment') and self.environment:
+            self.environment.root.removeNode()
+
+        self.taskMgr.remove("update_task")
+        if self.sound_fire: self.sound_fire.stop()
+
     def start_game(self):
         self.enter_state(Constants.STATE_PLAYING)
 
     def setup_game_world(self):
-        print("Starting game world...")
+        self.setBackgroundColor(0.5, 0.7, 0.9)
 
-        # Lights
         alight = AmbientLight('alight')
-        alight.setColor(Vec4(0.5, 0.5, 0.5, 1))
+        alight.setColor(Vec4(0.6, 0.6, 0.6, 1))
         alnp = self.render.attachNewNode(alight)
         self.render.setLight(alnp)
 
         dlight = DirectionalLight('dlight')
-        dlight.setColor(Vec4(0.8, 0.8, 0.8, 1))
+        dlight.setColor(Vec4(1.0, 1.0, 0.9, 1))
         dlnp = self.render.attachNewNode(dlight)
-        dlnp.setHpr(45, -45, 0)
+        dlnp.setHpr(45, -60, 0)
         self.render.setLight(dlnp)
 
+        self.environment = Environment(self)
         self.player = Player(self, self.input_manager)
         self.order_manager = OrderManager(self)
         self.customers = []
         self.score = 0
-        self.level_time = 180.0 # 3 minutes
+        self.level_time = 180.0
 
-        # Layout
         self.stations = []
-        # Crates
-        self.stations.append(IngredientCrate(self, (-4, 4, 0), "Tomato"))
-        self.stations.append(IngredientCrate(self, (-2, 4, 0), "Onion"))
+        # Layout
+        self.stations.append(ExtinguisherStation(self, (-8, 8, 0)))
+        self.stations.append(IngredientCrate(self, (-6, 8, 0), "Tomato"))
+        self.stations.append(IngredientCrate(self, (-4, 8, 0), "Onion"))
+        self.stations.append(IngredientCrate(self, (-2, 8, 0), "Meat"))
+        self.stations.append(CuttingBoard(self, (0, 8, 0)))
+        self.stations.append(Stove(self, (2, 8, 0)))
+        self.stations.append(Stove(self, (4, 8, 0)))
+        self.stations.append(TrashBin(self, (6, 8, 0)))
 
-        # Cutting Boards
-        self.stations.append(CuttingBoard(self, (0, 4, 0)))
+        self.stations.append(PlateCrate(self, (-3, 2, 0)))
+        self.stations.append(Counter(self, (0, 2, 0), self.order_manager))
+        self.stations.append(Counter(self, (3, 2, 0), self.order_manager))
 
-        # Stoves
-        self.stations.append(Stove(self, (2, 4, 0)))
-        self.stations.append(Stove(self, (4, 4, 0)))
+        self.stations.append(DiningTable(self, (-5, -5, 0)))
+        self.stations.append(DiningTable(self, (0, -5, 0)))
+        self.stations.append(DiningTable(self, (5, -5, 0)))
 
-        # Utilities
-        self.stations.append(TrashBin(self, (6, 4, 0)))
-        self.stations.append(ExtinguisherStation(self, (-6, 4, 0)))
-
-        # Counter and Plates
-        self.stations.append(Counter(self, (0, -4, 0), self.order_manager))
-        self.stations.append(PlateCrate(self, (-2, -4, 0)))
-
-        # Dining Tables
-        self.stations.append(DiningTable(self, (-5, -8, 0)))
-        self.stations.append(DiningTable(self, (0, -8, 0)))
-        self.stations.append(DiningTable(self, (5, -8, 0)))
-
-        self.camera.setPos(0, -15, 18)
-        self.camera.lookAt(0, 0, 0)
+        self.camera.setPos(0, -22, 22)
+        self.camera.lookAt(0, -2, 0)
 
         self.taskMgr.add(self.update, "update_task")
 
     def update(self, task):
         dt = globalClock.getDt()
-
         if self.state == Constants.STATE_PLAYING:
-            any_fire = False
             self.level_time -= dt
             if self.level_time <= 0:
                 self.enter_state(Constants.STATE_GAMEOVER)
@@ -256,26 +220,19 @@ class CookingGame(ShowBase):
 
             self.player.update(dt)
             self.order_manager.update(dt)
+            for c in self.customers[:]: c.update(dt)
 
-            for customer in self.customers[:]: # Use slice to avoid issues when customer removes itself
-                customer.update(dt)
+            any_fire = False
+            for s in self.stations:
+                s.update(dt)
+                if hasattr(s, 'on_fire') and s.on_fire: any_fire = True
 
-            for station in self.stations:
-                station.update(dt)
-                if hasattr(station, 'on_fire') and station.on_fire:
-                    any_fire = True
-
-            if any_fire:
-                if self.sound_fire and self.sound_fire.status() != 2: # 2 is PLAYING in Panda3D AudioSound
-                    self.sound_fire.play()
-            else:
-                if self.sound_fire: self.sound_fire.stop()
+            if any_fire and self.sound_fire and self.sound_fire.status() != 2: self.sound_fire.play()
+            elif not any_fire and self.sound_fire: self.sound_fire.stop()
 
             self.update_ui()
-
             if self.input_manager.is_pressed("interact"):
                 self.handle_interaction()
-                # Reset interact key to prevent spam
                 self.input_manager.pressed_keys["interact"] = False
 
         return task.cont
@@ -284,16 +241,10 @@ class CookingGame(ShowBase):
         self.score_text.setText(f"Score: {self.score}")
         self.timer_text.setText(f"Temps: {int(self.level_time)}")
 
-        orders_str = "Commandes:\n"
-        for order in self.order_manager.active_orders:
-            orders_str += f"- {order.recipe_name} ({int(order.time_left)}s)\n"
-        self.orders_text.setText(orders_str)
-
     def handle_interaction(self):
-        # Simple distance-based interaction
         for station in self.stations:
             dist = (self.player.model.getPos() - station.model.getPos()).length()
-            if dist < 1.5:
+            if dist < 1.8:
                 if station.interact(self.player):
                     if self.sound_interact: self.sound_interact.play()
                 break

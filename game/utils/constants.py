@@ -6,6 +6,7 @@ class Constants:
     STATE_PLAYING = "playing"
     STATE_PAUSED = "paused"
     STATE_GAMEOVER = "gameover"
+    STATE_LEVEL_SELECT = "level_select"
 
     # Default Keybindings (AZERTY)
     DEFAULT_KEYS = {

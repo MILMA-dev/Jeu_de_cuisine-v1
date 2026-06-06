@@ -15,28 +15,20 @@ class OrderManager:
     def __init__(self, base):
         self.base = base
         self.active_orders = []
-        self.recipes = {
-            "Starter": {
-                "Salade de Tomate": [("Tomato", Constants.ITEM_CUT)],
-                "Rondelles d'Oignons": [("Onion", Constants.ITEM_CUT)],
-            },
-            "Main": {
-                "Soupe d'Oignon": [("Onion", Constants.ITEM_COOKED)],
-                "Steak Grillé": [("Meat", Constants.ITEM_COOKED)],
-                "Meat & Onion": [("Meat", Constants.ITEM_COOKED), ("Onion", Constants.ITEM_COOKED)],
-            },
-            "Dessert": {
-                "Tomato Sweet": [("Tomato", Constants.ITEM_RAW)],
-            },
-            "Drink": {
-                "Eau": [], # Maybe a special station later
-            }
+        self.all_recipes = {
+            "Salade de Tomate": ([("Tomato", Constants.ITEM_CUT)], "Starter"),
+            "Rondelles d'Oignons": ([("Onion", Constants.ITEM_CUT)], "Starter"),
+            "Soupe d'Oignon": ([("Onion", Constants.ITEM_COOKED)], "Main"),
+            "Steak Grillé": ([("Meat", Constants.ITEM_COOKED)], "Main"),
+            "Meat & Onion": ([("Meat", Constants.ITEM_COOKED), ("Onion", Constants.ITEM_COOKED)], "Main"),
+            "Tomato Sweet": ([("Tomato", Constants.ITEM_RAW)], "Dessert"),
+            "Ratatouille Express": ([("Tomato", Constants.ITEM_COOKED), ("Onion", Constants.ITEM_COOKED)], "Main"),
         }
-        self.spawn_timer = 5.0 # Initial wait
+        self.spawn_timer = 5.0
 
-    def update(self, dt):
+    def update(self, dt, spawn_rate):
         self.spawn_timer += dt
-        if self.spawn_timer > 20.0:
+        if self.spawn_timer > spawn_rate:
             self.spawn_customer_and_order()
             self.spawn_timer = 0
 
@@ -47,15 +39,17 @@ class OrderManager:
 
     def spawn_customer_and_order(self):
         free_tables = [s for s in self.base.stations if s.station_type == "dining_table" and s.occupied_by is None]
-        if free_tables and len(self.active_orders) < 3:
+        if free_tables and len(self.active_orders) < 5:
             from game.entities.customer import Customer
             table = random.choice(free_tables)
             customer = Customer(self.base, table)
             self.base.customers.append(customer)
 
-            category = random.choice(["Starter", "Main", "Dessert"])
-            name = random.choice(list(self.recipes[category].keys()))
-            order = Order(name, self.recipes[category][name], category, customer)
+            level = self.base.level_manager.get_current_level()
+            name = random.choice(level.unlocked_recipes)
+            recipe_data, category = self.all_recipes[name]
+
+            order = Order(name, recipe_data, category, customer)
             customer.order = order
             self.active_orders.append(order)
 

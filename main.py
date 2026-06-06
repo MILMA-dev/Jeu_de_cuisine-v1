@@ -17,6 +17,7 @@ from game.entities.stations import (
 )
 from game.entities.environment import Environment
 from game.utils.order_manager import OrderManager
+from game.utils.level_manager import LevelManager
 
 class CookingGame(ShowBase):
     def __init__(self):
@@ -30,6 +31,7 @@ class CookingGame(ShowBase):
         self.pipeline = simplepbr.init()
 
         self.state = Constants.STATE_MENU
+        self.level_manager = LevelManager(self)
         self.key_map = self.load_keybindings()
         self.input_manager = InputManager(self, self.key_map)
 
@@ -50,18 +52,28 @@ class CookingGame(ShowBase):
             json.dump(self.key_map, f)
 
     def setup_ui(self):
-        # Background color for menus
         self.setBackgroundColor(0.2, 0.4, 0.6)
+        btn_style = {"scale": 0.08, "frameColor": (0.8, 0.4, 0.2, 1), "text_fg": (1,1,1,1), "relief": 1}
 
         # Main Menu
         self.menu_frame = DirectFrame(frameColor=(0, 0, 0, 0.6), frameSize=(-0.6, 0.6, -0.7, 0.7))
-        OnscreenText(text="COOKING ADVENTURE", pos=(0, 0.5), scale=0.15, parent=self.menu_frame, fg=(1, 0.8, 0.2, 1), font=self.loader.loadFont("models/cmss12"))
+        OnscreenText(text="COOKING ADVENTURE", pos=(0, 0.5), scale=0.15, parent=self.menu_frame, fg=(1, 0.8, 0.2, 1))
 
-        btn_style = {"scale": 0.08, "frameColor": (0.8, 0.4, 0.2, 1), "text_fg": (1,1,1,1), "relief": 1}
-
-        self.btn_play = DirectButton(text="COMMENCER", pos=(0, 0.2, 0), parent=self.menu_frame, command=self.start_game, **btn_style)
+        self.btn_play = DirectButton(text="CHOISIR NIVEAU", pos=(0, 0.2, 0), parent=self.menu_frame, command=lambda: self.enter_state(Constants.STATE_LEVEL_SELECT), **btn_style)
         self.btn_options = DirectButton(text="OPTIONS", pos=(0, 0.0, 0), parent=self.menu_frame, command=lambda: self.enter_state(Constants.STATE_OPTIONS), **btn_style)
         self.btn_quit = DirectButton(text="QUITTER", pos=(0, -0.2, 0), parent=self.menu_frame, command=sys.exit, **btn_style)
+
+        # Level Select Menu
+        self.level_select_frame = DirectFrame(frameColor=(0, 0, 0, 0.7), frameSize=(-0.8, 0.8, -0.8, 0.8))
+        OnscreenText(text="SÉLECTION DES NIVEAUX", pos=(0, 0.6), scale=0.1, parent=self.level_select_frame, fg=(1,1,1,1))
+
+        for i, level in enumerate(self.level_manager.levels):
+            DirectButton(text=f"Niveau {i+1}: {level.name}", scale=0.06, pos=(0, 0.4 - i*0.15, 0),
+                         parent=self.level_select_frame, command=self.start_level, extraArgs=[i], **btn_style)
+
+        DirectButton(text="RETOUR", scale=0.07, pos=(0, -0.6, 0),
+                     parent=self.level_select_frame, command=lambda: self.enter_state(Constants.STATE_MENU), **btn_style)
+        self.level_select_frame.hide()
 
         # Options Menu
         self.options_frame = DirectFrame(frameColor=(0, 0, 0, 0.8), frameSize=(-0.9, 0.9, -0.9, 0.9))
@@ -86,7 +98,9 @@ class CookingGame(ShowBase):
         # Game UI
         self.game_ui_frame = DirectFrame(frameColor=(0, 0, 0, 0), frameSize=(-1, 1, -1, 1))
         self.score_text = OnscreenText(text="Score: 0", pos=(-1.2, 0.9), scale=0.08, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ALeft)
+        self.level_goal_text = OnscreenText(text="Objectif: 0", pos=(-1.2, 0.8), scale=0.05, parent=self.game_ui_frame, fg=(1, 0.8, 0, 1), align=TextNode.ALeft)
         self.timer_text = OnscreenText(text="Temps: 180", pos=(1.2, 0.9), scale=0.08, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ARight)
+        self.level_name_text = OnscreenText(text="Niveau 1", pos=(0, 0.9), scale=0.07, parent=self.game_ui_frame, fg=(1,1,1,1), align=TextNode.ACenter)
         self.game_ui_frame.hide()
 
         # Game Over UI
@@ -102,8 +116,12 @@ class CookingGame(ShowBase):
             self.sound_fail = self.loader.loadSfx("assets/sounds/fail.wav")
             self.sound_fire = self.loader.loadSfx("assets/sounds/fire.wav")
             self.sound_fire.setLoop(True)
+            self.sound_cut = self.loader.loadSfx("assets/sounds/cut.wav")
+            self.sound_cook = self.loader.loadSfx("assets/sounds/cook.wav")
+            self.sound_cook.setLoop(True)
         except:
             self.sound_interact = self.sound_success = self.sound_fail = self.sound_fire = None
+            self.sound_cut = self.sound_cook = None
 
     def start_rebind(self, action):
         self.rebinding_action = action
@@ -124,6 +142,7 @@ class CookingGame(ShowBase):
         self.options_frame.hide()
         self.game_ui_frame.hide()
         self.gameover_frame.hide()
+        if hasattr(self, 'level_select_frame'): self.level_select_frame.hide()
 
         self.state = new_state
 
@@ -132,15 +151,28 @@ class CookingGame(ShowBase):
             self.setBackgroundColor(0.2, 0.4, 0.6)
         elif self.state == Constants.STATE_OPTIONS:
             self.options_frame.show()
+        elif self.state == Constants.STATE_LEVEL_SELECT:
+            self.level_select_frame.show()
         elif self.state == Constants.STATE_PLAYING:
             self.cleanup_game()
             self.game_ui_frame.show()
             self.setup_game_world()
         elif self.state == Constants.STATE_GAMEOVER:
             self.final_score_text.setText(f"Score Final: {self.score}")
+            level = self.level_manager.get_current_level()
+            if self.score >= level.goal_score:
+                self.final_score_text.setText(f"VICTOIRE ! Score: {self.score}")
+                self.final_score_text.setFg((0, 1, 0, 1))
+            else:
+                self.final_score_text.setText(f"ÉCHEC ! Score: {self.score} (Objectif: {level.goal_score})")
+                self.final_score_text.setFg((1, 0, 0, 1))
             self.gameover_frame.show()
 
     def cleanup_game(self):
+        if self.sound_cook: self.sound_cook.stop()
+        if self.sound_cut: self.sound_cut.stop()
+        if self.sound_fire: self.sound_fire.stop()
+
         if hasattr(self, 'player') and self.player:
             self.player.model.removeNode()
             if self.player.held_item: self.player.held_item.destroy()
@@ -162,8 +194,12 @@ class CookingGame(ShowBase):
         self.taskMgr.remove("update_task")
         if self.sound_fire: self.sound_fire.stop()
 
-    def start_game(self):
+    def start_level(self, level_idx):
+        self.level_manager.current_level_idx = level_idx
         self.enter_state(Constants.STATE_PLAYING)
+
+    def start_game(self):
+        self.enter_state(Constants.STATE_LEVEL_SELECT)
 
     def setup_game_world(self):
         self.setBackgroundColor(0.5, 0.7, 0.9)
@@ -184,7 +220,11 @@ class CookingGame(ShowBase):
         self.order_manager = OrderManager(self)
         self.customers = []
         self.score = 0
-        self.level_time = 180.0
+
+        level = self.level_manager.get_current_level()
+        self.level_time = level.time_limit
+        self.level_goal_text.setText(f"Objectif: {level.goal_score}")
+        self.level_name_text.setText(f"Niveau {self.level_manager.current_level_idx + 1}: {level.name}")
 
         self.stations = []
         # Layout
@@ -219,7 +259,8 @@ class CookingGame(ShowBase):
                 return task.cont
 
             self.player.update(dt)
-            self.order_manager.update(dt)
+            level = self.level_manager.get_current_level()
+            self.order_manager.update(dt, level.spawn_rate)
             for c in self.customers[:]: c.update(dt)
 
             any_fire = False

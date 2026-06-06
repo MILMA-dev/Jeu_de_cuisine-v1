@@ -81,9 +81,12 @@ class CuttingBoard(BaseStation):
 
     def update(self, dt):
         if self.is_cutting and self.content:
+            if self.base.sound_cut and self.base.sound_cut.status() != 2:
+                self.base.sound_cut.play()
             self.progress += dt * 0.5
             self.progress_bar.set_progress(min(self.progress, 1.0))
             if self.progress >= 1.0:
+                if self.base.sound_cut: self.base.sound_cut.stop()
                 self.content.state = Constants.ITEM_CUT
                 self.content.update_visual()
                 self.is_cutting = False
@@ -131,20 +134,26 @@ class Stove(BaseStation):
     def update(self, dt):
         if self.content and not self.on_fire:
             if self.content.state == Constants.ITEM_CUT:
+                if self.base.sound_cook and self.base.sound_cook.status() != 2:
+                    self.base.sound_cook.play()
                 self.progress += dt * 0.2
                 self.progress_bar.set_color(0, 1, 0)
                 self.progress_bar.set_progress(min(self.progress, 1.0))
                 # Orange glow on burner
                 self.burner.setColor(min(self.progress*2, 1.0), 0.2, 0, 1)
                 if self.progress >= 1.0:
+                    if self.base.sound_cook: self.base.sound_cook.stop()
                     self.content.state = Constants.ITEM_COOKED
                     self.content.update_visual()
             elif self.content.state == Constants.ITEM_COOKED:
+                if self.base.sound_cook and self.base.sound_cook.status() != 2:
+                    self.base.sound_cook.play()
                 self.burn_progress += dt * 0.1
                 self.progress_bar.set_color(1, 0, 0)
                 self.progress_bar.set_progress(min(self.burn_progress, 1.0))
                 self.burner.setColor(1, 0, 0, 1)
                 if self.burn_progress >= 1.0:
+                    if self.base.sound_cook: self.base.sound_cook.stop()
                     self.content.state = Constants.ITEM_BURNT
                     self.content.update_visual()
                     self.on_fire = True
@@ -152,9 +161,11 @@ class Stove(BaseStation):
                     self.fire_model = GeometryFactory.create_sphere(self.base.loader, self.model, pos=(0,0,1.5), scale=0.8, color=(1, 0.5, 0, 0.7))
                     if self.base.sound_fire: self.base.sound_fire.play()
             else:
+                if self.base.sound_cook: self.base.sound_cook.stop()
                 self.progress_bar.set_progress(0)
                 self.burner.setColor(0.05, 0.05, 0.05, 1)
         else:
+            if not self.on_fire and self.base.sound_cook: self.base.sound_cook.stop()
             self.progress_bar.set_progress(0)
             if not self.on_fire: self.burner.setColor(0.05, 0.05, 0.05, 1)
 
